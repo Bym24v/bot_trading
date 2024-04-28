@@ -1,51 +1,29 @@
-import time, os
+import numpy, time, telebot
 from math import *
-from decimal import Decimal
-from datetime import datetime
 import threading
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 from scipy.signal import argrelextrema
-import numpy
+from pymexc import spot
 
-from datetime import datetime
-#from binance.client import Client
-#from binance.enums import  *
-#from binance.exceptions import *
-
-from pymexc import spot, futures
-
+# Demo Keys
 api_key = "mx0vglIVNeUoeMNiak"
 api_secret = "2764b404e0ba4e509a9552900092e475"
-
-import telebot
-
 
 # SPOT V3
 spot_client = spot.HTTP(api_key = api_key, api_secret = api_secret)
 
-# initialize WebSocket client
-ws_spot_client = spot.WebSocket(api_key = api_key, api_secret = api_secret)
-
-# initialize HTTP client
-futures_client = futures.HTTP(api_key = api_key, api_secret = api_secret)
-
 # Telegram bot
 bot = telebot.TeleBot("6043605591:AAG0IToSiVhG0KQxhUw2Yk0Ie76iPELmyfk")
 
-#table = ['Open_time', 'Open', 'High', 'Low', 'Close', 'Volume', 'Close_time', 'Quote_volume', 'Trades', 'Taker_base', 'Taker_quote', 'Ignore']
-
 _symbol ='LINKUSDT'
+maxPerOperation = 50.0
 period_argre = 31
-gap = 0.25
+gap = 0.90
 
 backTest = True
 isGetData = False
-sendCap = False
 isSendTelegram = True
-isUI = False
 isLoop = True
 totalFee = 0
 totalFeeUSDT = 0
@@ -56,17 +34,8 @@ listBuys = []
 totalBuys = []
 totalSells = []
 
-isLong = False
-isStopLoss = False
-
-countKline = 0
-count = 0
-oldMax = 0
-buySell = 0
 countBuys = 0
 countSells = 0
-table = []
-isOpen = False
 timeP = []
 openP = []
 highP = []
@@ -79,25 +48,13 @@ lastMax = 0
 totalDiff = 0
 priceBuy = 0
 priceSell = 0
-    
-totalDay = 0
-totalYears = 0
-day = 0
-cday = 0
-years = 0
 actualPriceCoin = 0
 
-#fig = plt.figure(figsize=(12,6), facecolor='#DEDEDE')
-#fig, ax = plt.subplots(figsize=(12, 6)) # nrows=2,
-fig = ''
-ax = ''
-anin = None
-backTest_interval = 5000
 status = "running"
 mode = 'simulation'
 timeFrame = '1d'
 lastKlineBuy = ''
-maxAmout = 15
+maxAmout = 0
 
 def StartBot():
 
@@ -106,14 +63,7 @@ def StartBot():
     global amout
     global backTest
     global totalDiff
-    global isLong
-    global count
-    global countKline
-    global buySell
-    global table
     global _symbol
-    global isOpen
-    global isStopLoss
     global isGetData
     global priceBuy
     global priceSell
@@ -127,16 +77,6 @@ def StartBot():
     global totalBuys
     global totalSells
     global totalDiff
-    global totalDay
-    global totalYears
-    global day
-    global cday
-    global years
-    global sendCap
-    global backTest_interval  
-    global ax
-    global fig
-    global isUI
     global isLoop
     global actualPriceCoin
     global totalFee
@@ -145,6 +85,7 @@ def StartBot():
     global lastKlineBuy
     global gap
     global maxAmout
+    global maxPerOperation
     
     while isLoop:
         
@@ -159,19 +100,14 @@ def StartBot():
         mins = []
         maxs = []
         
-        initialAmout = 500
-        maxPerOperation = 5.0
         brokerFee = 0.001
         totalFee = 0.0
         
+        # Pandas Frame
         df = pd.DataFrame(columns=['Open_time', 'Open', 'High', 'Low', 'Close'])
-        
-        #if isGetData == False:
             
-        # kLines
+        # kLines Spot
         klines = spot_client.klines(symbol='LINKUSDT', interval=timeFrame, limit=100)
-        #orderBook = spot_client.order_book(symbol='LINKUSDT', limit=5)
-        #df = pd.DataFrame(columns=['Open_time','Close'])
         
         #account_info = spot_client.account_information()
         
@@ -184,16 +120,6 @@ def StartBot():
         # Calculate estimate fee usdt
         totalFeeUSDT = "{0:.3f}".format((actualPriceCoin * float(totalFee)))
         #print(totalFeeUSDT)
-        
-        #print(totalFee)
-        
-        #isGetData = True
-        #backTest = True
-        
-        #if os.path.exists("captura.png"):
-        #    os.remove("captura.png")
-        
-        #bot.send_photo(179291648, photo=open('foo.png', 'rb'))
         
         if backTest:
             
@@ -212,21 +138,21 @@ def StartBot():
             df["Close"] = pd.Series(closeP)
 
             if isGetData == False:
+                isGetData = True
+                
+                # Get Actual Date 
                 lastKlineBuy = pd.to_datetime(df['Open_time'][len(df['Open_time'])-1], unit='ms', utc=True)
                 print("Date Copy: {0}".format(lastKlineBuy.tz_convert('Europe/Berlin')))
-                #listBuys.append(14.686)
-                isGetData = True
+                print("Starting Bot Argre LINK/USDT")
             
             # Argrelextrema
             df['Min'] = df.iloc[argrelextrema(df['Close'].values, np.less_equal, order=period_argre)[0]]['Close']
             df['Max'] = df.iloc[argrelextrema(df['Close'].values, np.greater_equal, order=period_argre)[0]]['Close']
             
-            df["SMA_5"] = df["Close"].rolling(window=5).mean()
-            df["SMA_200"] = df["Close"].rolling(window=200).mean()
-            
             mins = argrelextrema(df['Close'].values, np.less_equal, order=period_argre)[0]
             maxs = argrelextrema(df['Close'].values, np.greater_equal, order=period_argre)[0]
             
+            # Signals Buys
             if mins[len(mins)-1] == 99:
                 
                 if amout < maxAmout:
@@ -280,6 +206,7 @@ def StartBot():
                                         + "\nU. Buy. Cost: {0:.2f}€".format(priceBuy * maxPerOperation) \
                                         + "\nDate: {0}".format(dateBuy.tz_convert('Europe/Berlin')))
             
+            # Signals Sells
             if maxs[len(maxs)-1] == 99:
                 
                 print('Signal Sell')    
@@ -313,65 +240,23 @@ def StartBot():
                                         + "\nT. Diff: {0:.2f}€".format(totalDiff) \
                                         + "\nDate: {0}".format(dateSell.tz_convert('Europe/Berlin')))
                                     
-            print("Init Amount: {0:.02f}€".format(initialAmout))
-            print("Max Amount: {0} LINK/USDT".format(maxAmout))
-            print("Max Operation: {0}".format(maxPerOperation))
-            print("Actual Price: {0:.03f}".format(actualPriceCoin))
-            print("Actual Amount: {0}".format(amout))
-            print("Total Fee: {0}".format(totalFee))
-            print("USDT Fee: {0}€".format(totalFeeUSDT))
-            print("List Buys: {0}".format(len(listBuys)))
-            print(listBuys)
-            print("Total Buy: {0}".format(countBuys))
-            print("Total Sell: {0}".format(countSells))
-            
-            finalDiffAmout =  ((initialAmout + totalDiff) / initialAmout) * 100
-            print("Total Perc: {0:.02f} %".format(finalDiffAmout - 100))
-            print("Total Diff: {0:.02f} €\n".format(totalDiff))
-                
-        if isUI:
-            ax.cla()
-            width=0.9
-            width2=0.1
-            pricesup=df[df['Close']>=df['Open']]
-            pricesdown=df[df['Close']<df['Open']]
-            ax.bar(pricesup.index,pricesup.Close-pricesup.Open,width,bottom=pricesup.Open,color='g')
-            ax.bar(pricesup.index,pricesup.High-pricesup.Close,width2,bottom=pricesup.Close,color='g')
-            ax.bar(pricesup.index,pricesup.Low-pricesup.Open,width2,bottom=pricesup.Open,color='g')
-            ax.bar(pricesdown.index,pricesdown.Close-pricesdown.Open,width,bottom=pricesdown.Open,color='r')
-            ax.bar(pricesdown.index,pricesdown.High-pricesdown.Open,width2,bottom=pricesdown.Open,color='r')
-            ax.bar(pricesdown.index,pricesdown.Low-pricesdown.Close,width2, bottom=pricesdown.Close,color='r')
-            
-            #ax.cla()
-            ax.scatter(df.Open_time.index, df['Min'], c='g', marker='^')
-            ax.scatter(df.Open_time.index, df['Max'], c='r', marker='v')
-            #ax.plot(df.index, df['SMA_5'], c='r')
-            #ax.plot(df.index, df['SMA_200'], c='b')
-            #ax.plot(df.index, df['Close'], c='k')
-            ax.grid(alpha=0.2)
-            #plt.show()
-            fig.show()
-            
-            #facecolors = ['green' if y > 0 else 'red' for y in df['Close']]
-            #edgecolors = facecolors
-            
-            # Normalize y values to get distinct face alpha values.
-            #abs_y = [abs(y) for y in df['Close']]
-            #face_alphas = [n / max(abs_y) for n in abs_y]
-            #edge_alphas = [1 - alpha for alpha in face_alphas]
+            #print("Init Amount: {0:.02f}€".format(initialAmout))
+            #print("Max Amount: {0} LINK/USDT".format(maxAmout))
+            #print("Max Operation: {0}".format(maxPerOperation))
+            #print("Actual Price: {0:.03f}".format(actualPriceCoin))
+            #print("Actual Amount: {0}".format(amout))
+            #print("Total Fee: {0}".format(totalFee))
+            #print("USDT Fee: {0}€".format(totalFeeUSDT))
+            #print("List Buys: {0}".format(len(listBuys)))
+            #print(listBuys)
+            #print("Total Buy: {0}".format(countBuys))
+            #print("Total Sell: {0}".format(countSells))
             #
-            #colors_with_alphas = list(zip(facecolors, face_alphas))
-            #edgecolors_with_alphas = list(zip(edgecolors, edge_alphas))
-            #ax[1].bar(df.index, df['Close'], color=colors_with_alphas, edgecolor=edgecolors_with_alphas)
-            
-            #ax[1].set_title('Normalized alphas for\neach bar and each edge')
-            #ax[1, 0].hist(df['Close'], density=True, histtype='barstacked', rwidth=0.8)
-            #ax[1, 0].hist(df['Open_time'], density=True, histtype='barstacked', rwidth=0.8)
-            #ax[1, 0].set_title('barstacked')
-            
-            #plt.gcf().autofmt_xdate()
+            #finalDiffAmout =  ((initialAmout + totalDiff) / initialAmout) * 100
+            #print("Total Perc: {0:.02f} %".format(finalDiffAmout - 100))
+            #print("Total Diff: {0:.02f} €\n".format(totalDiff))
         
-        time.sleep(20)
+        time.sleep(60) # 60 = 1min
     
     status = 'stop'
           
@@ -390,6 +275,7 @@ def start(message):
     global gap
     global period_argre
     global maxAmout
+    global maxPerOperation
     
     if isLoop:
         status = "running"
@@ -412,7 +298,7 @@ def start(message):
                         + "\nMode: {0}".format(mode) \
                         + "\nTimeFrame: {0}".format(timeFrame) \
                         + "\nMax Amount: {0}".format(maxAmout) \
-                        + "\nMax P. Operation: {0}".format(5) \
+                        + "\nMax P. Operation: {0}".format(maxPerOperation) \
                         + "\nLINK Fee: {0}".format(totalFee) \
                         + "\nUSDT Fee: {0}".format(totalFeeUSDT) \
                         + "\nU. GAP: {0}".format(gap) \
@@ -422,35 +308,17 @@ def start(message):
                         + "\nT. Buys: {0}".format(countBuys) \
                         + "\nT. Sells: {0}".format(countSells) \
                         + "\nT. Diff: {0}".format(totalDiff))
-    
-    #if message.text == '/buy':
-    #    bot.send_message(message.chat.id, "Symbol: LINK/USDT" \
-    #                    + "\nAmout: {0}".format(5) \
-    #                    + "\nPrice: {0}".format('14.78') \
-    #                    + "\nDate: {0}".format('date'))
+
 
 def LoopTelegram():
     bot.polling(none_stop=True)
 
 if __name__ == "__main__":
     
+    # Thread Bot Mexc
     t1 = threading.Thread(target=StartBot)
     t1.start()
     
-    # Loop Bot
+    # Thread Bot Telegram
     t2 = threading.Thread(target=LoopTelegram)
     t2.start()
-    
-    # Loop Telegram
-    #bot.polling(none_stop=True)
-    
-    #while True:
-    #    bot.polling(none_stop=True)
-    #    
-    #    StartBot()
-    #    
-    #    time.sleep(5)
-    
-    #anin = FuncAnimation(plt.gcf(), StartBot, frames=1000, interval=backTest_interval, repeat=False)
-    #fig.tight_layout()
-    #plt.show()
