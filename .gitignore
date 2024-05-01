@@ -13,6 +13,8 @@ bot_telegram.py
 config.py
 utils.py
 
+Bot_CVD_Ver_22_BTC_only.py
+
 *.pem
 *.txt
 *.html

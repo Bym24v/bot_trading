@@ -6,6 +6,8 @@ import pandas as pd
 from scipy.signal import argrelextrema
 from pymexc import spot
 
+# Server IP --> 64.23.211.147
+
 # Demo Keys
 api_key = "mx0vglIVNeUoeMNiak"
 api_secret = "2764b404e0ba4e509a9552900092e475"
@@ -17,9 +19,9 @@ spot_client = spot.HTTP(api_key = api_key, api_secret = api_secret)
 bot = telebot.TeleBot("6043605591:AAG0IToSiVhG0KQxhUw2Yk0Ie76iPELmyfk")
 
 _symbol ='LINKUSDT'
-maxPerOperation = 50.0
-period_argre = 31
-gap = 0.90
+maxPerOperation = 5.0
+period_argre = 15
+gap = 0.013
 
 backTest = True
 isGetData = False
@@ -52,9 +54,12 @@ actualPriceCoin = 0
 
 status = "running"
 mode = 'simulation'
-timeFrame = '1d'
-lastKlineBuy = ''
-maxAmout = 0
+timeFrame = '1m'
+lastKlineBuy = 0
+maxAmout = 50
+dateBuy = 0
+totalMins = 0
+toDay = False
 
 def StartBot():
 
@@ -86,6 +91,9 @@ def StartBot():
     global gap
     global maxAmout
     global maxPerOperation
+    global dateBuy
+    global totalMins
+    global toDay
     
     while isLoop:
         
@@ -102,6 +110,31 @@ def StartBot():
         
         brokerFee = 0.001
         totalFee = 0.0
+         
+        totalMins += 1
+        if totalMins == 1440:
+            toDay = True
+        
+        if toDay:
+            
+            toDay = False
+            totalMins = 0
+            
+            bot.send_message('-4116577296', "Symbol: LINK/USDT" \
+                        + "\nStatus: {0}".format(status) \
+                        + "\nMode: {0}".format(mode) \
+                        + "\nTimeFrame: {0}".format(timeFrame) \
+                        + "\nMax Amount: {0}".format(maxAmout) \
+                        + "\nMax P. Operation: {0}".format(maxPerOperation) \
+                        + "\nLINK Fee: {0}".format(totalFee) \
+                        + "\nUSDT Fee: {0}".format(totalFeeUSDT) \
+                        + "\nU. GAP: {0}".format(gap) \
+                        + "\nP. Argre: {0}".format(period_argre) \
+                        + "\nA. Price: {0}".format(actualPriceCoin) \
+                        + "\nL. Buys: {0}".format(len(listBuys)) \
+                        + "\nT. Buys: {0}".format(countBuys) \
+                        + "\nT. Sells: {0}".format(countSells) \
+                        + "\nT. Diff: {0}".format(totalDiff))
         
         # Pandas Frame
         df = pd.DataFrame(columns=['Open_time', 'Open', 'High', 'Low', 'Close'])
@@ -125,29 +158,29 @@ def StartBot():
             
             for kline in klines:
                 timeP.append(float(kline[0]))
-                openP.append(float(kline[1]))
-                highP.append(float(kline[2]))
-                lowP.append(float(kline[3]))
+                #openP.append(float(kline[1]))
+                #highP.append(float(kline[2]))
+                #lowP.append(float(kline[3]))
                 closeP.append(float(kline[4]))
                 
             # Set data to pandas 
             df["Open_time"] = pd.Series(timeP)
-            df["Open"] = pd.Series(openP)
-            df["High"] = pd.Series(highP)
-            df["Low"] = pd.Series(lowP)
+            #df["Open"] = pd.Series(openP)
+            #df["High"] = pd.Series(highP)
+            #df["Low"] = pd.Series(lowP)
             df["Close"] = pd.Series(closeP)
 
             if isGetData == False:
                 isGetData = True
                 
-                # Get Actual Date 
+                # Get Actual Date
                 lastKlineBuy = pd.to_datetime(df['Open_time'][len(df['Open_time'])-1], unit='ms', utc=True)
                 print("Date Copy: {0}".format(lastKlineBuy.tz_convert('Europe/Berlin')))
                 print("Starting Bot Argre LINK/USDT")
             
             # Argrelextrema
-            df['Min'] = df.iloc[argrelextrema(df['Close'].values, np.less_equal, order=period_argre)[0]]['Close']
-            df['Max'] = df.iloc[argrelextrema(df['Close'].values, np.greater_equal, order=period_argre)[0]]['Close']
+            #df['Min'] = df.iloc[argrelextrema(df['Close'].values, np.less_equal, order=period_argre)[0]]['Close']
+            #df['Max'] = df.iloc[argrelextrema(df['Close'].values, np.greater_equal, order=period_argre)[0]]['Close']
             
             mins = argrelextrema(df['Close'].values, np.less_equal, order=period_argre)[0]
             maxs = argrelextrema(df['Close'].values, np.greater_equal, order=period_argre)[0]
@@ -155,14 +188,17 @@ def StartBot():
             # Signals Buys
             if mins[len(mins)-1] == 99:
                 
+                print("Signal Buy")
                 if amout < maxAmout:
                     
                     priceBuy =  df['Close'][len(df['Close'])-1]
                     dateBuy =  pd.to_datetime(df['Open_time'][len(df['Open_time'])-1], unit='ms', utc=True)
+                    #print(lastKlineBuy < dateBuy.tz_convert('Europe/Berlin'))
                     
                     if lastKlineBuy < dateBuy.tz_convert('Europe/Berlin'):
                         lastKlineBuy = dateBuy.tz_convert('Europe/Berlin')
                         
+                        #print("Entra lista")
                         if len(listBuys) > 0:
                             
                             found = numpy.isclose(priceBuy, listBuys, rtol=1e-05, atol=1e-08, equal_nan=False)
@@ -186,10 +222,13 @@ def StartBot():
                                         + "\nSignal Buy" \
                                         + "\nAmout: {0}".format(maxPerOperation) \
                                         + "\nPrice: {0}".format(priceBuy) \
+                                        + "\nLINK. Fee: {0:.3f}€".format(float(totalFee)) \
                                         + "\nU. O. Fee: {0:.3f}€".format(float(totalFeeUSDT)) \
                                         + "\nU. Buy. Cost: {0:.2f}€".format(priceBuy * maxPerOperation) \
                                         + "\nDate: {0}".format(dateBuy.tz_convert('Europe/Berlin')))        
                         else:
+                            
+                            #print("Primera Compra")
                             print("Price Buy: {0}".format(priceBuy))
 
                             amout += maxPerOperation
@@ -202,6 +241,7 @@ def StartBot():
                                         + "\nSignal Buy" \
                                         + "\nAmout: {0}".format(maxPerOperation) \
                                         + "\nPrice: {0}".format(priceBuy) \
+                                        + "\nLINK. Fee: {0:.3f}€".format(float(totalFee)) \
                                         + "\nU. O. Fee: {0:.3f}€".format(float(totalFeeUSDT)) \
                                         + "\nU. Buy. Cost: {0:.2f}€".format(priceBuy * maxPerOperation) \
                                         + "\nDate: {0}".format(dateBuy.tz_convert('Europe/Berlin')))
@@ -212,7 +252,7 @@ def StartBot():
                 print('Signal Sell')    
                 for buy in listBuys:
                     
-                    idealSell = buy + ((float(totalFeeUSDT) + gap) * 2)
+                    idealSell = buy + ((float(totalFee) + gap) * 2)
                     print("Ideal Sell: {0:.3f}".format(idealSell))
                     
                     
@@ -222,7 +262,7 @@ def StartBot():
                         
                         totalDiff += (idealSell - buy) * maxPerOperation
                         
-                        totalDiff -= float(totalFeeUSDT) * 2
+                        totalDiff -= float(totalFee) * 2
                         
                         amout -= maxPerOperation
                         countSells += 1
@@ -235,11 +275,13 @@ def StartBot():
                                         + "\nSignal Sell" \
                                         + "\nAmout: {0}".format(maxPerOperation) \
                                         + "\nPrice: {0}".format(idealSell) \
+                                        + "\nLINK. Fee: {0:.3f}€".format(float(totalFee)) \
                                         + "\nU. O. Fee: {0:.3f}€".format(float(totalFeeUSDT)) \
                                         + "\nU. Sell: {0:.2f}€".format(idealSell * maxPerOperation) \
                                         + "\nT. Diff: {0:.2f}€".format(totalDiff) \
                                         + "\nDate: {0}".format(dateSell.tz_convert('Europe/Berlin')))
-                                    
+            
+                     
             #print("Init Amount: {0:.02f}€".format(initialAmout))
             #print("Max Amount: {0} LINK/USDT".format(maxAmout))
             #print("Max Operation: {0}".format(maxPerOperation))
@@ -251,67 +293,78 @@ def StartBot():
             #print(listBuys)
             #print("Total Buy: {0}".format(countBuys))
             #print("Total Sell: {0}".format(countSells))
-            #
+            
             #finalDiffAmout =  ((initialAmout + totalDiff) / initialAmout) * 100
             #print("Total Perc: {0:.02f} %".format(finalDiffAmout - 100))
             #print("Total Diff: {0:.02f} €\n".format(totalDiff))
         
-        time.sleep(60) # 60 = 1min
+        time.sleep(15) # 60 = 1min
     
     status = 'stop'
           
-@bot.message_handler(commands=['start', 'stop', 'status'])
-def start(message):
+# @bot.message_handler(commands=['start', 'stop', 'status'])
+# def start(message):
     
-    global isLoop
-    global status
-    global listBuys
-    global countBuys
-    global countSells
-    global actualPriceCoin
-    global totalFee
-    global totalFeeUSDT
-    global timeFrame
-    global gap
-    global period_argre
-    global maxAmout
-    global maxPerOperation
+#     global isLoop
+#     global status
+#     global listBuys
+#     global countBuys
+#     global countSells
+#     global actualPriceCoin
+#     global totalFee
+#     global totalFeeUSDT
+#     global timeFrame
+#     global gap
+#     global period_argre
+#     global maxAmout
+#     global maxPerOperation
     
-    if isLoop:
-        status = "running"
-    else:
-        status = 'stop'
+#     if isLoop:
+#         status = "running"
+#     else:
+#         status = 'stop'
         
-    if message.text == '/start':
-        if message.chat.id == -4116577296 or message.chat.id == 179291648:
-            bot.send_message(message.chat.id, "Start Bot!!\nstatus: {0}\nmode:{1}".format(status, mode))
-        else:
-            bot.send_message(message.chat.id, "Este bot es para uso privado.")
+#     if message.text == '/start':
+#         if message.chat.id == -4116577296 or message.chat.id == 179291648 or message.chat.id == 1690564747:
+#             bot.send_message(message.chat.id, "Start Bot!!\nstatus: {0}\nmode:{1}".format(status, mode))
+#         else:
+#             bot.send_message(message.chat.id, "Este bot es para uso privado.")
             
-    if message.text == '/stop':
-        isLoop = False
-        bot.send_message(message.chat.id, "Stop Bot!!\nstatus: {0}\nmode:{1}".format(status, mode))
+#     if message.text == '/stop':
+#         if message.chat.id == -4116577296 or message.chat.id == 179291648 or message.chat.id == 1690564747:
+#             isLoop = False
+#             bot.send_message(message.chat.id, "Stop Bot!!\nstatus: {0}\nmode:{1}".format(status, mode))
+#         else:
+#             bot.send_message(message.chat.id, "Este bot es para uso privado.")
         
-    if message.text == '/status':
-        bot.send_message(message.chat.id, "Symbol: LINK/USDT" \
-                        + "\nStatus: {0}".format(status) \
-                        + "\nMode: {0}".format(mode) \
-                        + "\nTimeFrame: {0}".format(timeFrame) \
-                        + "\nMax Amount: {0}".format(maxAmout) \
-                        + "\nMax P. Operation: {0}".format(maxPerOperation) \
-                        + "\nLINK Fee: {0}".format(totalFee) \
-                        + "\nUSDT Fee: {0}".format(totalFeeUSDT) \
-                        + "\nU. GAP: {0}".format(gap) \
-                        + "\nP. Argre: {0}".format(period_argre) \
-                        + "\nA. Price: {0}".format(actualPriceCoin) \
-                        + "\nL. Buys: {0}".format(len(listBuys)) \
-                        + "\nT. Buys: {0}".format(countBuys) \
-                        + "\nT. Sells: {0}".format(countSells) \
-                        + "\nT. Diff: {0}".format(totalDiff))
-
-
-def LoopTelegram():
-    bot.polling(none_stop=True)
+        
+        
+#     if message.text == '/status':
+#         if message.chat.id == -4116577296 or message.chat.id == 179291648 or message.chat.id == 1690564747:
+#             bot.send_message(message.chat.id, "Symbol: LINK/USDT" \
+#                         + "\nStatus: {0}".format(status) \
+#                         + "\nMode: {0}".format(mode) \
+#                         + "\nTimeFrame: {0}".format(timeFrame) \
+#                         + "\nMax Amount: {0}".format(maxAmout) \
+#                         + "\nMax P. Operation: {0}".format(maxPerOperation) \
+#                         + "\nLINK Fee: {0}".format(totalFee) \
+#                         + "\nUSDT Fee: {0}".format(totalFeeUSDT) \
+#                         + "\nU. GAP: {0}".format(gap) \
+#                         + "\nP. Argre: {0}".format(period_argre) \
+#                         + "\nA. Price: {0}".format(actualPriceCoin) \
+#                         + "\nL. Buys: {0}".format(len(listBuys)) \
+#                         + "\nT. Buys: {0}".format(countBuys) \
+#                         + "\nT. Sells: {0}".format(countSells) \
+#                         + "\nT. Diff: {0}".format(totalDiff))
+#         else:
+#             bot.send_message(message.chat.id, "Este bot es para uso privado.")
+            
+# def LoopTelegram():
+    
+#     try:
+#         bot.polling(none_stop=True)
+#     except:
+#         print("[!] Error Loop Telegram")
 
 if __name__ == "__main__":
     
@@ -320,5 +373,5 @@ if __name__ == "__main__":
     t1.start()
     
     # Thread Bot Telegram
-    t2 = threading.Thread(target=LoopTelegram)
-    t2.start()
+    #t2 = threading.Thread(target=LoopTelegram)
+    #t2.start()
